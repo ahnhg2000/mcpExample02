@@ -1,0 +1,16 @@
+[tool.pyrefly]
+python_version = "3.12"
+search_paths = [
+    "./.venv/Lib/site-packages",
+    "./backend",
+    "../backend"
+]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+extraPaths = [
+    "./.venv/Lib/site-packages",
+    "./backend",
+    "../backend"
+]

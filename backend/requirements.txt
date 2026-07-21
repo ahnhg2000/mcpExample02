@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+PyGithub
+python-dotenv
+pydantic
+langchain
+langchain-google-genai
+langchain-groq
+langchain-community
+langchain-ollama
+slack_sdk

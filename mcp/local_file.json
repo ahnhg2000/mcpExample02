@@ -1,0 +1,34 @@
+[
+  {
+    "name": "read_local_file",
+    "description": "지정한 로컬 파일의 텍스트 내용을 읽어옵니다.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "읽어올 파일의 상대 경로 또는 프로젝트 기준 경로 (예: 'notes.txt', 'config/app.json')"
+        }
+      },
+      "required": ["file_path"]
+    }
+  },
+  {
+    "name": "write_local_file",
+    "description": "지정한 로컬 파일 경로에 텍스트 내용을 작성하거나 덮어씁니다. 파일이 없으면 자동 생성합니다.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "저장할 파일의 상대 경로 (예: 'output/result.txt')"
+        },
+        "content": {
+          "type": "string",
+          "description": "파일에 기록할 텍스트 내용"
+        }
+      },
+      "required": ["file_path", "content"]
+    }
+  }
+]
