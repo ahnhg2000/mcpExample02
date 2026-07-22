@@ -86,9 +86,9 @@ async def handle_natural_language_task(task: TaskRequest):
 
                         # Slack 메시지 전송인 경우 길면 3줄 요약 수행
                         if tool_name in ["send_slack_message", "upload_file_to_slack"] and len(clean_result) > 200:
-                            summary_prompt = f"다음 텍스트 내용을 Slack 메시지에 전송하기 위해 핵심 위주로 3~5줄로 깔끔하게 요약해줘:\n\n{clean_result[:2500]}"
+                            summary_prompt = f"다음 텍스트 내용을 Slack 메시지에 전송하기 위해 핵심 위주로 3~4줄로 깔끔하게 요약해줘:\n\n{clean_result[:2500]}"
                             summary_text, _ = await llm_router.generate(
-                                "당신은 요약 전문가입니다. 인사말이나 다른 말 없이 오직 요약된 메시지 본문만 한국어로 반환하세요.",
+                                "당신은 요약 전문가입니다. 인사말이나 다른 말 없이 오직 요약된 메시지 본문만 한국어로 반환해줘.",
                                 summary_prompt
                             )
                             replacement = summary_text.strip()
