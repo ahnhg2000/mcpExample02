@@ -149,3 +149,83 @@ sequenceDiagram
 ### 예외 및 오류 전파 구조
 - LangChain의 `with_fallbacks` 내부에서 각 LLM 커넥터의 예외 클래스(예: `google.api_core.exceptions.GoogleAPICallError`, `groq.APIConnectionError` 등)가 발생하면, 내부적으로 이를 가로채 다음 LLM 인스턴스의 `ainvoke`를 자동으로 촉발시킵니다.
 - 최종적으로 3단계 모델마저 동작하지 못할 때에만 사용자에게 HTTP 500 에러를 전송하도록 격리 설계되었습니다.
+
+---
+
+## 📊 LangGraph 기반 GitHub PDF 보고서 생성 & HITL 워크플로우 아키텍처
+
+본 프로젝트에는 기존 MCP 도구 호출 기능 외에도, **LangGraph**를 활용하여 대화형 조건 검증, GitHub 데이터 수집, 마크다운 보고서 초안 생성, **Human-In-The-Loop(HITL)** 승인/수정 피드백 루프 및 Pure Python `fpdf2` PDF 생성을 처리하는 상태 기반 에이전트 파이프라인이 포함되어 있습니다.
+
+### 📄 1. ReportState 스키마 및 상태 정의 (`backend/routers/report_graph.py`)
+
+LangGraph 워크플로우는 immutable한 단일 `ReportState` 객체를 노드 간 전 전달하며 상태 변화를 관리합니다.
+
+```python
+class ReportState(TypedDict):
+    messages: List[Dict[str, Any]]        # 사용자/에이전트 대화 기록
+    repo_name: Optional[str]              # 대상 GitHub 저장소 (예: "mcpExample02")
+    branch: Optional[str]                 # 브랜치 (기본값: "main")
+    date_range: Optional[str]             # 조회 기간 (예: "최근 7일")
+    report_focus: Optional[str]           # 보고서 관점 (예: "개발자용 상세 Diff", "PM용 기능 요약")
+    is_sufficient: bool                   # 필수 조건 충족 여부 (Validator 판별)
+    github_data: Optional[Dict[str, Any]] # GitHub MCP 수집 데이터 (커밋, PR 내역)
+    draft_report: Optional[str]           # 생성된 마크다운 보고서 초안
+    user_feedback: Optional[str]          # HITL 검토 시 입력된 사용자 수정 요구사항
+    action: Optional[str]                 # HITL 사용자 선택 ("approve" | "edit")
+    pdf_path: Optional[str]               # 생성된 PDF 저장 파일 경로
+    file_id: Optional[str]                # 다운로드용 고유 파일 ID
+    clarification_message: Optional[str] # 역질문 안내 메시지
+```
+
+---
+
+### 🧩 2. 8개 핵심 노드(Node) 및 역할 명세
+
+| 노드 명 (Node Name) | 분류 | 핵심 역할 및 State 변화 |
+|---|---|---|
+| **1. `check_conditions`** | Validator | 유저 입력에서 `repo_name`, `date_range`, `report_focus`를 구조화 파싱하고, `is_sufficient` (True/False) 상태 갱신. |
+| **2. `ask_clarification`** | Conversational Agent | `is_sufficient == False`일 때 부족한 파라미터에 대한 대화형 역질문 메시지 생성 후 그래프 1차 대기. |
+| **3. `fetch_github_data`** | GitHub MCP Tool | `tools/github_tools.py`의 MCP 함수를 불러와 대상 기간의 커밋 히스토리 및 Merged PR 목록 수집 (`github_data` 저장). |
+| **4. `generate_draft_text`** | Writer Agent | 수집된 RAW 데이터를 표준 마크다운 보고서 양식(요약, PR/커밋 내역, 영향 모듈 등)으로 작성 (`draft_report` 저장). |
+| **5. `human_review_hitl`** | HITL Gatekeeper | `langgraph.types.interrupt()`를 호출하여 그래프 생명주기를 일시 중단(Pause). React UI 모달에 초안 전달 및 사용자 승인/피드백 대기. |
+| **6. `refine_draft_text`** | Editor Agent | 사용자의 수정 요구사항(`user_feedback`)을 바탕으로 기존 `draft_report`를 수정/보완 후 다시 `human_review_hitl` 노드로 재전송 (Refine Loop). |
+| **7. `compile_pdf`** | PDF Compiler | 검토가 완결된 `draft_report` 마크다운 텍스트를 Pure Python `fpdf2` 기반으로 한글 폰트(`NanumGothic.ttf`)를 임베딩하여 PDF로 컴파일. |
+| **8. `provide_download`** | Notifier Agent | 생성된 PDF 다운로드 URL (`/api/reports/download/{file_id}`) 카드를 생성하여 사용자 메시지에 추가 후 워크플로우 종료. |
+
+---
+
+### 🔄 3. LangGraph 플로우 다이어그램 (StateGraph)
+
+```mermaid
+flowchart TD
+    START([START]) --> N1[1. check_conditions\n조건 파싱 및 검증]
+    
+    N1 -->|route_after_check| COND1{is_sufficient?}
+    
+    COND1 -->|False| N2[2. ask_clarification\n추가 정보 역질문]
+    N2 --> END1([END - 1차 사용자 답변 대기])
+    
+    COND1 -->|True| N3[3. fetch_github_data\nGitHub MCP 데이터 수집]
+    N3 --> N4[4. generate_draft_text\n마크다운 보고서 초안 생성]
+    N4 --> N5[5. human_review_hitl\ninterrupt 대기 및 UI 모달 송신]
+    
+    N5 -->|route_after_hitl| COND2{action?}
+    
+    COND2 -->|edit| N6[6. refine_draft_text\n사용자 피드백 반영 초안 재작성]
+    N6 --> N5
+    
+    COND2 -->|approve| N7[7. compile_pdf\nfpdf2 Pure Python PDF 컴파일]
+    N7 --> N8[8. provide_download\nFastAPI 다운로드 링크 카드 발급]
+    N8 --> END2([END - 완료])
+```
+
+---
+
+### ⏸️ 4. Human-In-The-Loop (HITL) 및 Checkpointer 생명주기
+
+1. **인터럽트 중단 (`interrupt()`)**:
+   - `human_review_hitl` 노드에서 `langgraph.types.interrupt()`가 호출되면 Graph 실행이 일시 중지되고 현재 `ReportState`는 백엔드의 `MemorySaver` 체크포인터 메모리에 영구 보존됩니다.
+2. **React UI 연동 & Command(resume=...)**:
+   - 프론트엔드 모달 팝업에서 사용자가 **[내용 수정 요청]** 또는 **[승인]**을 누르면 백엔드 API (`POST /api/reports/resume`)로 데이터가 전송됩니다.
+   - 백엔드는 `Command(resume={"action": action, "feedback": feedback})`를 통해 대기 중이던 동일한 `thread_id` 그래프를 즉시 재개(Resume)합니다.
+

@@ -213,3 +213,37 @@ def execute_github_tool(tool_name: str, arguments: Dict[str, Any]) -> str:
 
     else:
         raise ValueError(f"지원하지 않는 GitHub 도구입니다: {tool_name}")
+
+
+async def get_commit_history(repo: str, branch: str = "main", per_page: int = 15):
+    """LangGraph 보고서 생성을 위한 커밋 히스토리 수집 헬퍼 함수"""
+    try:
+        res = execute_github_tool("list_commits", {"repo_name": repo, "limit": per_page})
+        if isinstance(res, str):
+            try:
+                return json.loads(res)
+            except Exception:
+                return res
+        return res
+    except Exception as e:
+        return [{"error": str(e), "message": "커밋 목록 조회 중 예외 발생"}]
+
+
+async def get_pull_requests(repo: str, state: str = "closed", per_page: int = 10):
+    """LangGraph 보고서 생성을 위한 PR 목록 수집 헬퍼 함수"""
+    try:
+        r = get_user_repo(repo)
+        prs = r.get_pulls(state=state)
+        pr_list = []
+        for p in prs[:per_page]:
+            pr_list.append({
+                "number": p.number,
+                "title": p.title,
+                "user": p.user.login,
+                "merged_at": p.merged_at.isoformat() if p.merged_at else None,
+                "html_url": p.html_url
+            })
+        return pr_list
+    except Exception as e:
+        return [{"error": str(e), "message": "PR 목록 조회 중 예외 발생"}]
+

@@ -50,8 +50,10 @@ async def handle_natural_language_task(task: TaskRequest):
 
 [요청 사항]
 1. 사용 가능한 도구 목록(JSON)을 자세히 분석하여, 사용자의 명령을 수행하기 위한 최적의 실행 흐름(시퀀스)을 수립하세요.
-2. 이전 도구의 실행 결과(예: read_local_file 결과)를 다음 도구(예: send_slack_message)의 입력 인자로 넘겨야 할 경우, arguments 값에 `{{previous_result}}` 또는 `{{read_local_file.outputs.content}}` 와 같은 템플릿 플레이스홀더를 명시하십시오. 백엔드가 이전 실행 결과를 동적으로 요약/치환하여 실행합니다.
-3. 결과는 무조건 실행할 순서대로 정렬된 JSON 배열 포맷 하나만 반환해야 합니다. 설명이나 다른 텍스트는 절대 덧붙이지 마십시오.
+2. 사용자가 `mcpExample02`, `mcpExample` 등 저장소(Repository)명이나 GitHub 변경 이력/소스를 언급한 경우, `read_local_file` 도구가 아닌 `list_commits`, `get_repository_details` 등 GitHub MCP 도구를 최우선으로 선택하십시오.
+3. 이전 도구의 실행 결과(예: read_local_file 결과)를 다음 도구(예: send_slack_message)의 입력 인자로 넘겨야 할 경우, arguments 값에 `{{previous_result}}` 또는 `{{read_local_file.outputs.content}}` 와 같은 템플릿 플레이스홀더를 명시하십시오. 백엔드가 이전 실행 결과를 동적으로 요약/치환하여 실행합니다.
+4. 결과는 무조건 실행할 순서대로 정렬된 JSON 배열 포맷 하나만 반환해야 합니다. 설명이나 다른 텍스트는 절대 덧붙이지 마십시오.
+
 
 [출력 포맷 규격]
 [

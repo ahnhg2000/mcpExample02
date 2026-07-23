@@ -2,6 +2,9 @@
     "venvPath": ".",
     "venv": ".venv",
     "extraPaths": [
+        "./backend",
         "./.venv/Lib/site-packages"
-    ]
+    ],
+    "reportMissingTypeStubs": false
 }
+

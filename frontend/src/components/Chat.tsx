@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Github, Bot, Terminal, Shield, Cpu, RefreshCw, 
-  CheckCircle2, XCircle, ChevronRight, Play, AlertCircle 
+  CheckCircle2, XCircle, ChevronRight, Play, AlertCircle, FileText, Download, Edit3, Check
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -30,13 +30,16 @@ interface Message {
   synthesizerModel?: string;
   plan?: Array<{ tool: string; arguments: any }>;
   logs?: ExecutionLog[];
+  downloadUrl?: string;
+  fileId?: string;
+  isReport?: boolean;
 }
 
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([
     { 
       role: 'system', 
-      content: 'LangChain 기반 3단계 Fallback 체인이 작동 중입니다. (1순위: Gemini 2.5 Flash ➔ 2순위: Groq Llama ➔ 3순위: 로컬 Ollama gemma4:e2b)\n원하시는 GitHub 작업을 자연어로 작성해 주세요.' 
+      content: 'LangChain 기반 3단계 Fallback 체인 & LangGraph HITL PDF 보고서 생성 에이전트가 가동 중입니다.\n(1순위: Gemini 2.5 Flash ➔ 2순위: Groq Llama ➔ 3순위: 로컬 Ollama gemma4:e2b)\n원하시는 GitHub 작업 또는 PDF 보고서 생성 요청을 자연어로 작성해 주세요.' 
     }
   ]);
   const [input, setInput] = useState('');
@@ -45,13 +48,23 @@ export default function Chat() {
   const [activeTab, setActiveTab] = useState<'chat' | 'tools'>('chat');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // HITL 모달 관련 상태
+  const [hitlModalOpen, setHitlModalOpen] = useState(false);
+  const [hitlDraft, setHitlDraft] = useState('');
+  const [hitlMessage, setHitlMessage] = useState('');
+  const [threadId, setThreadId] = useState('session_' + Date.now());
+  const [feedbackInput, setFeedbackInput] = useState('');
+  const [isEditingFeedback, setIsEditingFeedback] = useState(false);
+  const [isReportFlowActive, setIsReportFlowActive] = useState(false);
+
   // 학습용 퀵 스타트 예제 칩
   const quickPrompts = [
-    { label: "내 레포 목록 조회", prompt: "현재 내 GitHub 저장소 목록을 조회해서 요약해줘." },
-    { label: "README.md 파일 수정", prompt: "mcpExample 저장소의 README.md 파일 내용을 읽어보고 끝에 '김과장 완료'라고 덧붙여서 업데이트해줘." },
-    { label: "최근 커밋 확인", prompt: "mcpExample 저장소의 최근 커밋 목록 3개만 조회해줘." },
-    { label: "깃허브 반영해줘", prompt: "현재 로컬의 변경 사항을 깃허브에 반영해줘." }
+    { label: "❓ [역질문 유도 1] 정보 부족 질문", prompt: "최근 깃허브 변경사항 보고서 만들어줘" },
+    { label: "❓ [역질문 유도 2] 레포명만 입력", prompt: "mcpExample02 보고서 PDF로 작성해줘" },
+    { label: "📄 [완결형 1단계] 한 번에 생성", prompt: "mcpExample02 저장소의 최근 7일 커밋 내역 개발자용 PDF 보고서 만들어줘" },
+    { label: "내 레포 목록 조회", prompt: "현재 내 GitHub 저장소 목록을 조회해서 요약해줘." }
   ];
+
 
   // 컴포넌트 마운트 시 백엔드의 MCP 툴 스펙 로드
   useEffect(() => {
@@ -79,25 +92,119 @@ export default function Chat() {
     setInput('');
     setIsLoading(true);
 
+    const isReportRequest = isReportFlowActive ||
+                            textToSend.includes('보고서') || 
+                            textToSend.toLowerCase().includes('pdf') || 
+                            textToSend.toLowerCase().includes('report') ||
+                            textToSend.includes('참고') ||
+                            textToSend.includes('기록') ||
+                            textToSend.includes('내역') ||
+                            textToSend.includes('변경');
+
+    if (isReportRequest) {
+      setIsReportFlowActive(true);
+      try {
+        const res = await axios.post(`${API_BASE_URL}/api/reports/start`, {
+          message: textToSend,
+          thread_id: threadId
+        });
+
+        const data = res.data;
+        if (data.status === 'hitl_required') {
+          setHitlDraft(data.draft_report || '');
+          setHitlMessage(data.message || '마크다운 보고서 초안이 작성되었습니다. 검토해 주세요.');
+          setHitlModalOpen(true);
+        } else if (data.status === 'need_clarification') {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: data.message
+          }]);
+        } else if (data.status === 'completed') {
+          setIsReportFlowActive(false);
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: data.messages?.[data.messages.length - 1]?.content || 'PDF 보고서 작성이 완료되었습니다.',
+            downloadUrl: `${API_BASE_URL}/api/reports/download/${data.file_id}`,
+            fileId: data.file_id,
+            isReport: true
+          }]);
+        }
+      } catch (err: any) {
+        console.error(err);
+        const errMsg = err.response?.data?.detail || '보고서 생성 프로세스 통신 중 에러가 발생했습니다.';
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `🚨 오류 발생:\n${errMsg}`,
+          isError: true
+        }]);
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+
+      try {
+        const res = await axios.post(`${API_BASE_URL}/agent/task`, {
+          description: textToSend
+        });
+
+        const data = res.data;
+        if (data.status === 'success') {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: data.result,
+            plannerModel: data.planner_model,
+            synthesizerModel: data.synthesizer_model,
+            plan: data.plan,
+            logs: data.execution_logs
+          }]);
+        }
+      } catch (err: any) {
+        console.error(err);
+        const errMsg = err.response?.data?.detail || '백엔드 서버와 통신할 수 없거나 예기치 못한 에러가 발생했습니다.';
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `🚨 오류 발생:\n${errMsg}`,
+          isError: true
+        }]);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  // HITL 승인 또는 수정 요청 제출 핸들러
+  const handleResume = async (action: 'approve' | 'edit') => {
+    setIsLoading(true);
+    setHitlModalOpen(false);
+
     try {
-      const res = await axios.post(`${API_BASE_URL}/agent/task`, {
-        description: textToSend
+      const res = await axios.post(`${API_BASE_URL}/api/reports/resume`, {
+        thread_id: threadId,
+        action: action,
+        feedback: action === 'edit' ? feedbackInput : ''
       });
 
       const data = res.data;
-      if (data.status === 'success') {
+      if (data.status === 'hitl_required') {
+        setHitlDraft(data.draft_report || '');
+        setHitlMessage(data.message || '피드백이 반영된 수정 초안이 작성되었습니다. 검토해 주세요.');
+        setHitlModalOpen(true);
+        setIsEditingFeedback(false);
+        setFeedbackInput('');
+      } else if (data.status === 'completed') {
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: data.result,
-          plannerModel: data.planner_model,
-          synthesizerModel: data.synthesizer_model,
-          plan: data.plan,
-          logs: data.execution_logs
+          content: `대표님, 요청하신 PDF 보고서 작성이 완료되었습니다! (파일 ID: ${data.file_id})`,
+          downloadUrl: `${API_BASE_URL}${data.download_url}`,
+          fileId: data.file_id,
+          isReport: true
         }]);
+        setFeedbackInput('');
+        setIsEditingFeedback(false);
       }
     } catch (err: any) {
       console.error(err);
-      const errMsg = err.response?.data?.detail || '백엔드 서버와 통신할 수 없거나 예기치 못한 에러가 발생했습니다.';
+      const errMsg = err.response?.data?.detail || 'HITL 처리 중 에러가 발생했습니다.';
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: `🚨 오류 발생:\n${errMsg}`,
@@ -107,6 +214,7 @@ export default function Chat() {
       setIsLoading(false);
     }
   };
+
 
   return (
     <div className="flex flex-1 h-full w-full bg-zinc-950 text-zinc-100 font-sans overflow-hidden">
@@ -275,16 +383,40 @@ export default function Chat() {
                     </div>
                   </div>
                 )}
+                {/* 3. PDF 다운로드 버튼 칩 */}
+                {msg.downloadUrl && (
+                  <div className="mt-4 pt-3 border-t border-zinc-800 flex items-center justify-between bg-emerald-950/20 border border-emerald-800/40 rounded-xl p-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-emerald-300">GitHub 반영 기록 PDF 보고서</div>
+                        <div className="text-[10px] text-zinc-400 font-mono">파일 ID: {msg.fileId}</div>
+                      </div>
+                    </div>
+                    <a
+                      href={msg.downloadUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>PDF 다운로드</span>
+                    </a>
+                  </div>
+                )}
               </div>
             </div>
           ))}
+
 
           {/* 로딩 대기 상태 UI */}
           {isLoading && (
             <div className="flex justify-start items-center gap-3">
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-3 text-emerald-400 text-sm">
                 <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
-                <span>LangChain Fallback Engine이 최선의 실행 계획을 수립하고 툴을 호출하는 중...</span>
+                <span>LangGraph 에이전트가 상태를 검증하고 프로세스를 진행 중입니다...</span>
               </div>
             </div>
           )}
@@ -315,7 +447,7 @@ export default function Chat() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend(input)}
-              placeholder="예: mcpExample 저장소의 최근 커밋 5개 조회해줘..."
+              placeholder="예: mcpExample02 최근 7일 커밋 보고서 PDF로 생성해줘..."
               className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 text-sm placeholder:text-zinc-600"
             />
             <button
@@ -327,7 +459,99 @@ export default function Chat() {
             </button>
           </div>
         </div>
+
+        {/* ----------------------------------------------------------- */}
+        {/* HITL (Human-in-the-Loop) 모달 팝업 UI */}
+        {/* ----------------------------------------------------------- */}
+        {hitlModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+              
+              {/* 모달 헤더 */}
+              <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/50">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg">
+                    <Shield className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sm text-zinc-100">Human-In-The-Loop (HITL) 검토 및 승인</h3>
+                    <p className="text-xs text-zinc-400">PDF 컴파일 전 마크다운 초안을 검토해 주세요.</p>
+                  </div>
+                </div>
+                <span className="text-[10px] px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 font-mono font-semibold border border-amber-500/30">
+                  ⏸️ interrupt() 대기 중
+                </span>
+              </div>
+
+              {/* 미리보기 본문 */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800/80 text-xs text-zinc-300">
+                  {hitlMessage}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-zinc-400 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-emerald-400" />
+                    <span>마크다운 보고서 초안 미리보기</span>
+                  </label>
+                  <div className="p-4 bg-zinc-950 rounded-xl border border-zinc-800 font-mono text-xs text-zinc-300 leading-relaxed max-h-72 overflow-y-auto whitespace-pre-wrap">
+                    {hitlDraft}
+                  </div>
+                </div>
+
+                {/* 수정 피드백 입력란 */}
+                {isEditingFeedback && (
+                  <div className="space-y-2 pt-2 border-t border-zinc-800 animate-fadeIn">
+                    <label className="text-xs font-semibold text-indigo-400 flex items-center gap-1">
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>수정 요청 피드백 작성</span>
+                    </label>
+                    <textarea
+                      value={feedbackInput}
+                      onChange={(e) => setFeedbackInput(e.target.value)}
+                      placeholder="예: 2번 항목 설명 좀 더 쉽게 써주고 요약 문단을 상단에 추가해줘..."
+                      className="w-full h-24 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-xs text-zinc-200 focus:outline-none focus:border-indigo-500 placeholder:text-zinc-600 resize-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* 모달 푸터 버튼 영역 */}
+              <div className="p-4 border-t border-zinc-800 bg-zinc-950/50 flex justify-between items-center gap-3">
+                {!isEditingFeedback ? (
+                  <button
+                    onClick={() => setIsEditingFeedback(true)}
+                    className="flex items-center gap-1.5 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold rounded-xl transition-colors"
+                  >
+                    <Edit3 className="w-4 h-4 text-indigo-400" />
+                    <span>내용 수정 요청하기</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleResume('edit')}
+                    disabled={!feedbackInput.trim()}
+                    className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-colors"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>수정 사항 반영하여 재작성</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => handleResume('approve')}
+                  className="flex items-center gap-1.5 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-emerald-950/30 transition-colors"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>[승인] PDF 생성 및 다운로드</span>
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
 }
+

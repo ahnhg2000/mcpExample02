@@ -9,3 +9,7 @@ langchain-groq
 langchain-community
 langchain-ollama
 slack_sdk
+langgraph
+langchain-core
+fpdf2
+requests
