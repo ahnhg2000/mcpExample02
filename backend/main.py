@@ -1,7 +1,7 @@
 # 사전설치 : pip install fastapi uvicorn pydantic PyGithub python-dotenv langchain-google-genai langchain-groq langchain-ollama langchain-core slack_sdk
 # 사전설치 : pip install langchain-ollama langgraph langchain-core fpdf2 requests
 # 라이브러리를 독립적으로 사용하기 위해 가상환경(venv) 구성 : Ctrl + Shift + P --> Python:Select Interpreter --> create venv --> Python 3.12 선택
-# 마크다운 파일을 보기 위한 Extension 설치(Ctrl + Shift + X 클릭) : Markdown Preview Mermaid Support 설치  --> md 파일 클릭 커서 이동 후 --> Ctrl + Shift + V로 확인
+# 마크다운 파일을 보기 위한 Extension 설치(Ctrl + Shift + X 클릭) : Markdown Preview Enhanced 설치 --> md 파일 클릭 커서 이동 후 --> Ctrl + Shift + V로 확인
 import os
 import sys
 import uvicorn
