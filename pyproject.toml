@@ -1,16 +1,14 @@
 [tool.pyrefly]
 python_version = "3.12"
-search_paths = [
-    "./.venv/Lib/site-packages",
-    "./backend",
-    "../backend"
-]
+search_path = ["backend", "./.venv/Lib/site-packages"]
+search_paths = ["backend", "./.venv/Lib/site-packages"]
+pythonpath = ["backend"]
+python_interpreter_path = ".venv/Scripts/python.exe"
 
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
 extraPaths = [
-    "./.venv/Lib/site-packages",
-    "./backend",
-    "../backend"
+    "backend",
+    "./.venv/Lib/site-packages"
 ]

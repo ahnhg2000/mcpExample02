@@ -1,7 +1,8 @@
 import os
 import uuid
 import json
-from typing import TypedDict, List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional
+from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import interrupt
@@ -121,9 +122,9 @@ async def node_ask_clarification(state: ReportState) -> Dict[str, Any]:
 
 async def node_fetch_github_data(state: ReportState) -> Dict[str, Any]:
     """3. GitHub MCP 데이터 수집 노드 (GitHub MCP Tool)"""
-    repo = state.get("repo_name", "mcpExample02")
-    branch = state.get("branch", "main")
-    date_range = state.get("date_range", "최근 7일")
+    repo = state.get("repo_name") or "mcpExample02"
+    branch = state.get("branch") or "main"
+    date_range = state.get("date_range") or "최근 7일"
 
     print(f"[Fetch GitHub Data] repo: {repo}, branch: {branch}, date: {date_range}")
 
@@ -145,10 +146,10 @@ async def node_fetch_github_data(state: ReportState) -> Dict[str, Any]:
 
 async def node_generate_draft_text(state: ReportState) -> Dict[str, Any]:
     """4. 마크다운 보고서 초안 작성 노드 (Writer Agent)"""
-    gh_data = state.get("github_data", {})
-    focus = state.get("report_focus", "주요 기능 변경 중심")
-    repo = state.get("repo_name", "mcpExample02")
-    date_range = state.get("date_range", "최근 7일")
+    gh_data = state.get("github_data") or {}
+    focus = state.get("report_focus") or "주요 기능 변경 중심"
+    repo = state.get("repo_name") or "mcpExample02"
+    date_range = state.get("date_range") or "최근 7일"
 
     system_prompt = """당신은 GitHub 커밋 및 PR 변경 이력을 바탕으로 전문적이고 깔끔한 마크다운 보고서를 작성하는 서기 에이전트입니다.
 [보고서 양식 가이드]
@@ -193,8 +194,8 @@ async def node_human_review_hitl(state: ReportState) -> Dict[str, Any]:
 
 async def node_refine_draft_text(state: ReportState) -> Dict[str, Any]:
     """6. 초안 수정 노드 (Editor Agent)"""
-    curr_draft = state.get("draft_report", "")
-    feedback = state.get("user_feedback", "")
+    curr_draft = state.get("draft_report") or ""
+    feedback = state.get("user_feedback") or ""
 
     system_prompt = """당신은 기존 마크다운 보고서에 대해 사용자의 피드백을 반영하여 내용을 다듬고 완성도를 높이는 편집 에이전트입니다.
 제공된 피드백의 요구사항을 충실히 반영하되 전체 보고서의 구조와 정갈함을 유지하세요."""
@@ -212,7 +213,7 @@ async def node_refine_draft_text(state: ReportState) -> Dict[str, Any]:
 
 async def node_compile_pdf(state: ReportState) -> Dict[str, Any]:
     """7. PDF 컴파일 노드 (PDF Compiler Tool)"""
-    draft = state.get("draft_report", "# 보고서 내용 없음")
+    draft = state.get("draft_report") or "# 보고서 내용 없음"
     file_id = str(uuid.uuid4())[:8]
     pdf_filename = f"report_{file_id}.pdf"
     output_path = os.path.join(DOWNLOAD_DIR, pdf_filename)
@@ -227,7 +228,7 @@ async def node_compile_pdf(state: ReportState) -> Dict[str, Any]:
 
 async def node_provide_download(state: ReportState) -> Dict[str, Any]:
     """8. 다운로드 제공 노드 (Notifier Agent)"""
-    file_id = state.get("file_id", "unknown")
+    file_id = state.get("file_id") or "unknown"
     download_url = f"/api/reports/download/{file_id}"
     
     msg = f"대표님, 요청하신 GitHub 보고서 PDF 생성이 완료되었습니다!\n아래 다운로드 버튼을 클릭하여 PDF 파일(`report_{file_id}.pdf`)을 받으실 수 있습니다."
@@ -261,7 +262,7 @@ def route_after_hitl(state: ReportState) -> str:
 # 4. 그래프 조립 및 컴파일
 # ----------------------------------------------------
 
-builder = StateGraph(ReportState)
+builder = StateGraph(ReportState)  # type: ignore
 
 # 노드 추가
 builder.add_node("check_conditions", node_check_conditions)

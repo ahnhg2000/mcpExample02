@@ -1,5 +1,6 @@
 import os
 from typing import Dict, Any, Tuple
+from pydantic import SecretStr
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
@@ -16,11 +17,14 @@ class LLMRouter:
         google_api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         groq_api_key = os.getenv("GROQ_API_KEY")
         
+        google_secret = SecretStr(google_api_key) if google_api_key else None
+        groq_secret = SecretStr(groq_api_key) if groq_api_key else None
+
         # 1순위: Google Gemini 2.5 Flash
         # langchain-google-genai 사용
         self.gemini = ChatGoogleGenerativeAI(
             model="gemini-2.5-flash",
-            google_api_key=google_api_key,
+            google_api_key=google_secret,
             temperature=0
         )
         
@@ -28,7 +32,7 @@ class LLMRouter:
         # langchain-groq 사용
         self.groq_llama = ChatGroq(
             model="llama-3.3-70b-versatile",
-            groq_api_key=groq_api_key,
+            api_key=groq_secret,
             temperature=0
         )
         
@@ -85,4 +89,5 @@ class LLMRouter:
         else:
             model_display = f"{resolved_model} (구동됨)"
 
-        return response.content, model_display
+        content = response.content if isinstance(response.content, str) else str(response.content)
+        return content, model_display

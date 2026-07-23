@@ -1,0 +1,4 @@
+python_version = "3.12"
+search_path = ["backend", ".venv/Lib/site-packages"]
+pythonpath = ["backend"]
+python_interpreter_path = ".venv/Scripts/python.exe"
